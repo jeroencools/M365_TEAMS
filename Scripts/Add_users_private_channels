@@ -1,0 +1,46 @@
+# By executing this script you can add users to teams and all private channels (input = csv)
+
+Connect-MgGraph
+
+# Import the CSV file
+$teams = Import-Csv -Path "add path"
+
+# Loop through each team in the CSV
+foreach ($team in $teams) {
+    $teamName = $team.TeamName
+    $userPrincipalName = $team.UserPrincipalName
+    Write-Host "Adding $userPrincipalName to $teamName"
+
+    # Get the team ID
+    $teamId = (Get-MgTeam -Filter "displayName eq '$teamName'").Id
+
+    # Create the body parameter for adding the user as an owner
+    $bodyParameter = @{
+        '@odata.type' = "#microsoft.graph.aadUserConversationMember"
+        roles = @("owner")
+        'user@odata.bind' = "https://graph.microsoft.com/v1.0/users/$userPrincipalName"
+    }
+
+    # Add the user as an owner to the team
+    $response = Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/teams/$teamId/members" -Body ($bodyParameter | ConvertTo-Json -Depth 10)
+
+    # Get all private channels in the team that start with "0."
+    $privateChannels = Get-MgTeamChannel -TeamId $teamId | Where-Object { $_.MembershipType -eq "private" -and $_.DisplayName -like "0.*" }
+
+    # Loop through each private channel and add the user as an owner
+    foreach ($channel in $privateChannels) {
+        $channelId = $channel.Id
+        $channelName = $channel.DisplayName
+        Write-Host "Adding $userPrincipalName to $channelName"
+
+        # Create the body parameter for adding the user as an owner to the channel
+        $channelBodyParameter = @{
+            '@odata.type' = "#microsoft.graph.aadUserConversationMember"
+            roles = @("owner")
+            'user@odata.bind' = "https://graph.microsoft.com/v1.0/users/$userPrincipalName"
+        }
+
+        # Use the correct command for adding a member to a private channel
+        Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/teams/$teamId/channels/$channelId/members" -Body ($channelBodyParameter | ConvertTo-Json -Depth 10)
+    }
+}
